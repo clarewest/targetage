@@ -1,0 +1,20 @@
+Package: targetage
+Title: Potential Targets for Healthy Ageing Analysis
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Clare E",
+           family = "West",
+           role = c("aut", "cre"),
+           email = "clare.west@sgc.ox.ac.uk")
+Description: What the package does (one paragraph).
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.0
+Imports: 
+    dplyr,
+    ggplot2,
+    cowplot,
+    plyr,
+    stringr
