@@ -15,6 +15,10 @@ RoxygenNote: 7.1.0
 Imports: 
     dplyr,
     ggplot2,
-    cowplot,
     plyr,
-    stringr
+    stringr,
+    tidyr
+Suggests: 
+    cowplot,
+    testthat,
+    UpSetR
