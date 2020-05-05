@@ -17,7 +17,8 @@ Imports:
     ggplot2,
     plyr,
     stringr,
-    tidyr
+    tidyr,
+    magrittr
 Suggests: 
     cowplot,
     testthat,

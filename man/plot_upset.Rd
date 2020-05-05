@@ -10,7 +10,8 @@ plot_upset(
   association_type = "genetic",
   only_longevity = TRUE,
   morbidities_intersection = list("heart_disease", "neurodegenerative_disease",
-    "longevity")
+    "longevity"),
+  morbidities_ignore = NULL
 )
 }
 \arguments{
@@ -29,6 +30,8 @@ longevity are included in the plot}
 
 \item{morbidities_intersection}{list. A list of morbidities for which the
 intersection should be highlighted in the plot}
+
+\item{morbidities_ignore}{vector. Morbidities to ignore when plotting}
 }
 \value{
 Returns an UpSetR plot showing the number of targets associated with

@@ -31,8 +31,15 @@ widen_associations <- function(associations) {
     ) %>%
     mutate(morbidity = stringr::str_replace_all(morbidity, " ", "_")) %>%
     dplyr::select(
-      -starts_with("evidence_count.datasources"),-starts_with("association_score.datasources"),-starts_with("disease.")
+      starts_with("target"),
+      morbidity,
+      contains(".datatypes."),
+      contains(".overall"),
+      is_direct,
+      evidence_count.total,
+      -id
     ) %>%
+    ## pivot longer so each row is a target-disease-associationtype x value
     tidyr::pivot_longer(
       cols = c(
         starts_with("evidence_count.datatypes"),
@@ -42,6 +49,7 @@ widen_associations <- function(associations) {
         is_direct
       )
     ) %>%
+    # pivot wider so each row is a target x diseaseassociations
     tidyr::pivot_wider(
       names_from = c("morbidity", "name"),
       values_from = value,

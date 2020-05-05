@@ -4,14 +4,24 @@
 \alias{read_longevity}
 \title{Read in Longevity data}
 \usage{
-read_longevity(filepath = NULL, all_datatypes = FALSE)
+read_longevity(
+  associations = NULL,
+  filepath = NULL,
+  all_datatypes = FALSE,
+  from_file = FALSE
+)
 }
 \arguments{
+\item{associations}{dataframe. The target-disease associations}
+
 \item{filepath}{string. Path to files}
 
 \item{all_datatypes}{logical. If false, only the overall association score
 and the genetic association score datatype columns are returned. If true,
 all association scores for all datatypes are returned.}
+
+\item{from_file}{logical. If true, read from a file, otherwise take from
+within the associations dataframe}
 }
 \value{
 Returns a dataframe containing target associations with Longevity

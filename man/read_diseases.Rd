@@ -4,11 +4,9 @@
 \alias{read_diseases}
 \title{Read Morbidities}
 \usage{
-read_diseases(filename = "disease_list.csv")
+read_diseases(morbidity_file = "disease_list.csv")
 }
 \arguments{
-\item{associations}{dataframe. The target-disease associations}
-
 \item{morbidity_file}{string. The csv file containing the morbidities list. The
 file should consist of two columns: the disease.id (EFO code) and the
 human-readable morbidity name. Lines commented out using # are ignored.}

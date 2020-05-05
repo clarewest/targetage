@@ -82,6 +82,8 @@ add_genage <-
 #' @param all_datatypes logical. If false, only the overall association score
 #'    and the genetic association score datatype columns are returned. If true,
 #'    all association scores for all datatypes are returned.
+#' @param from_file logical. If true, read from a file, otherwise take from
+#'    within the associations dataframe
 #' @return Returns the \code{associations} dataframe joined with Longevity data as extra columns.
 #' @examples
 #' add_longevity(associations)
@@ -90,11 +92,19 @@ add_genage <-
 add_longevity <-
   function(associations,
            filepath = NULL,
-           all_datatypes = FALSE)
+           all_datatypes = FALSE,
+           from_file = FALSE)
   {
     a <- associations %>%
-      dplyr::left_join(read_longevity(filepath = filepath, all_datatypes = all_datatypes),
-                       by = "target.id")
+      dplyr::left_join(
+        read_longevity(associations,
+          filepath = filepath,
+          all_datatypes = all_datatypes,
+          from_file = from_file
+        ),
+        fill = TRUE,
+        by = "target.id"
+      )
     return(a)
   }
 

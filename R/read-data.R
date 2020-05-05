@@ -2,7 +2,6 @@
 #'
 #' Reads in the list of morbidities used to query Open Targets for associations
 #'
-#' @param associations dataframe. The target-disease associations
 #' @param morbidity_file string. The csv file containing the morbidities list. The
 #'    file should consist of two columns: the disease.id (EFO code) and the
 #'    human-readable morbidity name. Lines commented out using # are ignored.
@@ -12,14 +11,15 @@
 #' read_diseases(associations, filename = "controls_list.csv")
 #' @importFrom dplyr mutate mutate_if rename select starts_with contains funs
 #' @export
-read_diseases = function(filename = "disease_list.csv") {
+read_diseases = function(morbidity_file = "disease_list.csv") {
   d <- read.csv(
-    filename,
+    morbidity_file,
     col.names = c("disease.id", "morbidity"),
     comment.char = "#",
     stringsAsFactors = FALSE,
     header = FALSE
-  )
+  ) %>%
+    mutate_if(is.character, stringr::str_trim)
   return(d)
 }
 
@@ -76,7 +76,7 @@ read_associations = function(filepath = NULL,
   a <-
     d %>%
     full_join(associations, by = "disease.id") %>%
-    filter(!morbidity %in% remove_morbidities)
+    dplyr::filter(!morbidity %in% remove_morbidities)
   return(a)
 }
 
@@ -86,6 +86,9 @@ read_associations = function(filepath = NULL,
 #' from Open Targets
 #'
 #' @param filepath string. Path to files
+#' @param from_file logical. If true, read from a file, otherwise take from
+#'    within the associations dataframe
+#' @param associations dataframe. The target-disease associations
 #' @param all_datatypes logical. If false, only the overall association score
 #'    and the genetic association score datatype columns are returned. If true,
 #'    all association scores for all datatypes are returned.
@@ -96,17 +99,27 @@ read_associations = function(filepath = NULL,
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr bind_rows full_join rename_at filter
 #' @export
-read_longevity <- function(filepath = NULL,
-                           all_datatypes = FALSE)
+read_longevity <- function(associations,
+                           filepath = NULL,
+                           all_datatypes = FALSE,
+                           from_file = FALSE)
 {
-  l <-
-    read.csv(
-      paste0(
-        filepath,
-        "databases/targets_associated_with_longevity.csv"
-      ),
-      stringsAsFactors = FALSE
-    ) %>%
+  if (from_file){
+    l <-
+      read.csv(
+        paste0(
+          filepath,
+          "databases/targets_associated_with_longevity.csv"
+        ),
+        stringsAsFactors = FALSE
+      )
+  }
+  else {
+    l <-
+      associations %>%
+      dplyr::filter(morbidity == "longevity")
+  }
+  l <- l %>%
     select(target.id, starts_with("association")) %>%
     rename_at(dplyr::vars(starts_with("association")), dplyr::funs(paste0("longevity.", .)))
   if (!all_datatypes) {

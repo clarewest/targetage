@@ -4,7 +4,12 @@
 \alias{add_longevity}
 \title{Add Longevity data}
 \usage{
-add_longevity(associations, filepath = NULL, all_datatypes = FALSE)
+add_longevity(
+  associations,
+  filepath = NULL,
+  all_datatypes = FALSE,
+  from_file = FALSE
+)
 }
 \arguments{
 \item{associations}{dataframe. The target-disease associations}
@@ -14,6 +19,9 @@ add_longevity(associations, filepath = NULL, all_datatypes = FALSE)
 \item{all_datatypes}{logical. If false, only the overall association score
 and the genetic association score datatype columns are returned. If true,
 all association scores for all datatypes are returned.}
+
+\item{from_file}{logical. If true, read from a file, otherwise take from
+within the associations dataframe}
 }
 \value{
 Returns the \code{associations} dataframe joined with Longevity data as extra columns.
