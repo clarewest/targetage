@@ -5,7 +5,7 @@
 \title{Read in Longevity data}
 \usage{
 read_longevity(
-  associations = NULL,
+  associations,
   filepath = NULL,
   all_datatypes = FALSE,
   from_file = FALSE

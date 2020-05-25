@@ -132,3 +132,28 @@ read_longevity <- function(associations,
   }
   return(l)
 }
+
+#' Read in safety data from Open Targets
+#'
+#' Read curated safety data
+#'
+#' @param filepath string. Path to files
+#' @param from_file logical. If true, read from a file, otherwise take from
+#'    within the associations dataframe
+#' @param associations dataframe. The target-disease associations
+#' @param all_datatypes logical. If false, only the overall association score
+#'    and the genetic association score datatype columns are returned. If true,
+#'    all association scores for all datatypes are returned.
+#' @return Returns a dataframe containing target associations with Longevity
+#' @examples
+#' read_longevity()
+#' read_longevity(all_dataypes = TRUE)
+#' @importFrom magrittr '%>%'
+#' @importFrom dplyr bind_rows full_join rename_at filter
+#' @export
+read_safety <- function(filepath = NULL,
+                           filename = "/databases/OT_20.04/known_target_safety-2020-04-01.json",
+                           from_file = FALSE){
+  raw_json <- jsonlite::fromJSON(paste0(filepath, filename))
+  return(raw_json)
+}

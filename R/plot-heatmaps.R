@@ -38,6 +38,10 @@ plot_heatmap <-
         fill = "right"
       ) %>%
       mutate(datatype = ifelse(is.na(datatype), "overall", datatype))
+    gene_plot_df <- gene_plot_df %>%
+      mutate(morbidity = factor(morbidity, levels = c(
+        sort(unique(gene_plot_df$morbidity[gene_plot_df$morbidity != "longevity"])), "longevity")) ## alphabetical order for morbidities, but with longevity on the end
+      )
     ## make a heatmap
     textcol <- "grey40"
     gene_heatmap <-

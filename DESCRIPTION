@@ -18,7 +18,8 @@ Imports:
     plyr,
     stringr,
     tidyr,
-    magrittr
+    magrittr,
+    jsonlite
 Suggests: 
     cowplot,
     testthat,

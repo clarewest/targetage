@@ -108,3 +108,47 @@ add_longevity <-
     return(a)
   }
 
+#' Add Targets for Alzheimer's and Parkinson's Disease
+#'
+#' Add the targets being persued at the SGC for Alzheimers and Parkinsons
+#'
+#' @param associations dataframe. The target-disease associations
+#' @param filepath string. Path to files
+#' @return Returns the \code{associations} dataframe with AD.sgc.target and PD.sgc.target as extra columns.
+#' @examples
+#' add_adpd_targets(associations)
+#' @importFrom magrittr '%>%'
+#' @importFrom dplyr mutate rename select left_join
+#' @export
+add_adpd_targets <-
+  function(associations,
+           adfile = "databases/SGC_OpenAD_candidategenes_2020-04-21.csv",
+           pdfile = "databases/SGC_parkinsonsdisease_candidategenes_2019-12-20.csv",
+           filepath = NULL,
+           allfields = FALSE) {
+    pd <-
+      read.csv(paste0(filepath, pdfile),
+               header = TRUE,
+               stringsAsFactors = FALSE) %>%
+      rename(target.gene_info.symbol = Gene.symbol) %>%
+      mutate(PD.sgc.target = 1)
+
+    ad <- read.csv(paste0(filepath, adfile),
+                   header = TRUE,
+                   stringsAsFactors = FALSE) %>%
+      rename(target.gene_info.symbol = Gene.symbol) %>%
+      mutate(AD.sgc.target = 1)
+
+    if (!allfields) {
+      ad <- ad %>% select(target.gene_info.symbol, AD.sgc.target)
+      pd <- pd %>% select(target.gene_info.symbol, PD.sgc.target)
+    }
+
+    ## join genage with associations
+    associations <- associations %>%
+      left_join(ad, by = "target.gene_info.symbol") %>%
+      left_join(pd, by = "target.gene_info.symbol")
+
+    return(associations)
+  }
+

@@ -4,13 +4,13 @@
 \alias{plot_heatmap}
 \title{Plot Heatmap}
 \usage{
-plot_heatmap(gene_code, associations, save = FALSE, morbidities_ignore = NULL)
+plot_heatmap(associations, gene_code, save = FALSE, morbidities_ignore = NULL)
 }
 \arguments{
-\item{gene_code}{string. Gene code for the gene of interest.}
+\item{associations}{dataframe. The target-disease associations in wide
+format, in which each row is a target}
 
-\item{associations}{dataframe. The target-disease associations in long
-format, in which each row is a target-disease association}
+\item{gene_code}{string. Gene code for the gene of interest.}
 
 \item{save}{logical. If true, the plot is saved, with the default name}
 

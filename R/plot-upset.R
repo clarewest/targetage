@@ -15,6 +15,7 @@
 #' @param morbidities_intersection list. A list of morbidities for which the
 #'    intersection should be highlighted in the plot
 #' @param morbidities_ignore vector. Morbidities to ignore when plotting
+#' @param queries list. Custom queries
 #' @return Returns an UpSetR plot showing the number of targets associated with
 #'    each combination of morbidities
 #' @examples
@@ -29,7 +30,8 @@ plot_upset <-
            association_type = "genetic",
            only_longevity = TRUE,
            morbidities_intersection = list("heart_disease", "neurodegenerative_disease", "longevity"),
-           morbidities_ignore = NULL) {
+           morbidities_ignore = NULL,
+           queries = NULL) {
 
     requireNamespace("UpSetR", quietly = TRUE)
 
@@ -57,7 +59,7 @@ plot_upset <-
     print(new_names)
 
     ## Remove non-diseases and the morbidities to ignore
-    diseases <- new_names[! new_names %in% c("target.id", "GenAge.human", stringr::str_replace_all(morbidities_ignore, ' ', "_"))]
+    diseases <- new_names[! new_names %in% c("target.id", "GenAge.human", "AD.sgc.target", "PD.sgc.target", stringr::str_replace_all(morbidities_ignore, ' ', "_"))]
     print(diseases)
 
     ## Only select targets that are associated with longevity
@@ -77,6 +79,10 @@ plot_upset <-
           active = T
         )
       )
+    }
+
+    if (!missing(queries)){
+      active_queries = queries
     }
 
     upset_plot <- UpSetR::upset(

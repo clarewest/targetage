@@ -33,12 +33,32 @@ a_long <- a %>% add_longevity(from_file = FALSE)
 ## convert the associations to wide format
 a_wide <- widen_associations(a) %>%
   add_genage(filepath = dir)
+  
+## Label whether SGC targets
+a_sgc <- add_adpd_targets(a_wide, filepath = dir)
 
 ## generate an UpSetR plot
-plot_upset(a_wide, only_longevity = TRUE)
+plot_upset(associations_wide = a_wide, only_longevity = TRUE)
+
+sgc_queries = list(
+    list(
+      query = elements,
+      params = list("AD.sgc.target", 1),
+      active = T,
+      query.name = "SGC AD target"
+    )
+      )
+
+plot_upset(associations_wide = a_sgc, queries = sgc_queries)
 
 ## generate a heatmap plot showing the associations for a given gene
 plot_heatmap(a_wide, "APOE")
-  
+
+safety_json <- read_safety(dir)
+unsafe_targets <- map(safety_json, names) %>% unlist() %>% names()
+a_wide$safety_warning <- as.integer(a_wide$target.gene_info.symbol %in% unsafe_targets)
+nrow(a_wide)
+sum(a_wide$safety_warning)
+
 ```
 
