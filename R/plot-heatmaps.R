@@ -118,7 +118,7 @@ plot_heatmap <-
 #' @importFrom tidyr pivot_longer
 #' @importFrom ggplot2 ggplot
 #' @export
-plot_multiheatmap <- function(associations, save = FALSE) {
+plot_multiheatmap <- function(associations, save = FALSE, sort_nmorb = FALSE, gene_order = NULL) {
   textcol <- "grey40"
   df <- associations %>%
     dplyr::select(starts_with("target"), contains("association_score.overall")) %>%
@@ -128,6 +128,24 @@ plot_multiheatmap <- function(associations, save = FALSE) {
     mutate(name = factor(name, levels = c(
       sort(unique(df$name[df$name != "longevity"])), "longevity")) ## alphabetical order for morbidities, but with longevity on the end
       )
+  if (sort_nmorb == TRUE){
+    nsum_order <-
+      associations %>%
+      dplyr::select(starts_with("target"), contains("association_score.overall")) %>%
+      mutate_if(is.numeric, funs(ifelse(.>0, 1, 0))) %>%
+      mutate(nsum = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>%
+      arrange(nsum) %>%
+      pull(target.gene_info.name)
+    print(length(nsum_order))
+    print(nsum_order[duplicated(nsum_order)])
+    df <- df %>%
+      mutate(target.gene_info.name = factor(target.gene_info.name, levels = unique(nsum_order)))
+  }
+  if (! missing(gene_order)){
+    name_order <- df %>% arrange(match(target.gene_info.symbol, gene_order)) %>% pull(target.gene_info.name)
+    df <- df %>%
+      mutate(target.gene_info.name = factor(target.gene_info.name, levels = unique(name_order)))
+  }
   heatmap <-
     ggplot(df, aes(x = name, y = target.gene_info.name, fill = value)) +
     geom_tile(colour = "black", size = 0.3) +
@@ -143,6 +161,7 @@ plot_multiheatmap <- function(associations, save = FALSE) {
       na.value = 'gray90',
       guide = guide_colorbar(frame.colour = "black", frame.linewidth = 0.8)
     ) +
+    guides(fill = FALSE) +
     theme(
       axis.text.x = element_text(
         colour = textcol,

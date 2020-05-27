@@ -126,22 +126,23 @@ add_adpd_targets <-
            pdfile = "databases/SGC_parkinsonsdisease_candidategenes_2019-12-20.csv",
            filepath = NULL,
            allfields = FALSE) {
-    pd <-
-      read.csv(paste0(filepath, pdfile),
+    ad <-
+      read.csv(paste0(filepath, adfile),
                header = TRUE,
                stringsAsFactors = FALSE) %>%
       rename(target.gene_info.symbol = Gene.symbol) %>%
-      mutate(PD.sgc.target = 1)
+      mutate(AD.sgc.target = 1)
 
-    ad <- read.csv(paste0(filepath, adfile),
+    pd <- read.csv(paste0(filepath, pdfile),
                    header = TRUE,
                    stringsAsFactors = FALSE) %>%
       rename(target.gene_info.symbol = Gene.symbol) %>%
-      mutate(AD.sgc.target = 1)
+      mutate(PD.sgc.all = 1) %>%
+      mutate(PD.sgc.target = ifelse(priority == 1, 1, 0))
 
     if (!allfields) {
       ad <- ad %>% select(target.gene_info.symbol, AD.sgc.target)
-      pd <- pd %>% select(target.gene_info.symbol, PD.sgc.target)
+      pd <- pd %>% select(target.gene_info.symbol, PD.sgc.target, PD.sgc.all)
     }
 
     ## join genage with associations

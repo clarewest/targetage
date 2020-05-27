@@ -1,0 +1,122 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(targetage)
+library(tidyverse)
+
+dir = "~/work/ageing-target-pipeline/"
+
+## read in the associations file, add data from genage and targets associated with longevity
+a <- read_associations(filepath = dir, remove_morbidities = c("premature ageing", NA)) %>%
+  add_genage(filepath = dir) 
+  
+a_long <- a %>% add_longevity(from_file = FALSE)
+  
+## convert the associations to wide format
+a_wide <- widen_associations(a) %>%
+  add_genage(filepath = dir)
+  
+## Label whether SGC targets
+a_sgc <- add_adpd_targets(a_wide, filepath = dir)
+## attempt to plot with SGC annotation
+
+association_type = "genetic"
+associations_wide <- a_sgc
+morbidities_ignore <- unique(a$morbidity)[17:26]
+
+    ## Process argument specifying which associations to plot
+    type_filter <- switch(association_type,
+                          "genetic" = "association_score.datatypes.genetic_association",
+                          "overall" = "association_score.overall",
+                          stop("Invalid option for association type."))
+
+    binary_associations <- associations_wide %>%
+      dplyr::select(target.id, dplyr::contains(type_filter), GenAge.human, AD.sgc.target, PD.sgc.target) %>%
+      mutate_if(is.numeric, funs(ifelse(is.na(.), 0, ifelse(. > 0, 1, 0)))) %>%
+      mutate(target.id = as.factor(target.id))  %>%
+      as.data.frame()
+
+    ## Clean up names for figure
+    new_names <-
+      colnames(binary_associations) %>% stringr::str_remove(., paste0(".", type_filter))
+    colnames(binary_associations) <- new_names
+    print(new_names)
+
+    ## Remove non-diseases and the morbidities to ignore
+    diseases <- new_names[! new_names %in% c("target.id", "GenAge.human", "AD.sgc.target", "PD.sgc.target", stringr::str_replace_all(morbidities_ignore, ' ', "_"))]
+    print(diseases)
+
+    ## Only select targets that are associated with longevity
+      binary_associations <- binary_associations %>% dplyr::filter(longevity > 0.05)
+
+    
+    new_binary_associations <- binary_associations %>% 
+      mutate(sgc.target = ifelse(pmax(PD.sgc.target, AD.sgc.target) == 1, "target", "not a target"))
+    upset_plot <- UpSetR::upset(
+      new_binary_associations ,
+      sets = diseases,
+      sets.bar.color = "#56B4E9",
+      order.by = "freq",
+      text.scale = c(1.3, 1.3, 1.3, 1, 1.5, 1),
+      mainbar.y.label = "",
+      sets.x.label = "Total targets",
+      queries = list(
+    list(
+      query = elements,
+      params = list("sgc.target", "target"),
+      active = T,
+      color = "orange",
+      query.name = "AD or PD target"
+    )
+      )
+    )
+
+sgc_queries = list(
+    list(
+      query = elements,
+      params = list("AD.sgc.target", 1),
+      active = T,
+      query.name = "SGC AD target"
+    )
+      )
+
+get_multimorbidity <- function(genecode){
+  target = subset(a3, target.gene_info.symbol == genecode)
+  target %>% 
+    dplyr::select(contains("association_score.overall"), -contains("type_1_diabetes"), -contains("measles"), -contains("neurodegeneration")) %>% 
+    mutate(nsum = rowSums(.>0, na.rm = TRUE)) %>% 
+    pull(nsum)
+}
+
+multimorb <- a_wide %>% select(target.id, target.gene_info.symbol, contains("association_score.datatypes.genetic_association")) %>% filter(longevity.association_score.datatypes.genetic_association>=0.05) %>% mutate_if(is.numeric, funs(ifelse(.>=0.05, 1, 0))) %>% mutate(nsum = rowSums(select_if(., is.numeric), na.rm = TRUE))
+genes <- paste0(multimorb$target.gene_info.symbol, sep=",", collapse="")
+longevity_multimorb <- filter(multimorb, nsum>1, sort_nmorb = TRUE)
+
+pre_mat <- a_wide %>%
+  filter(target.id %in% longevity_multimorb$target.id) %>% 
+  select(target.gene_info.symbol, contains("association_score.overall")) %>% 
+  rename_all(stringr::str_replace, pattern = ".association_score.overall",replacement = "")
+
+library(ggdendro)
+mat <- as.matrix(pre_mat[,-1])
+rownames(mat) <- pre_mat$target.gene_info.symbol
+dendro <- as.dendrogram(hclust(d = dist(x = mat)))
+dendro.plot <- ggdendrogram(data = dendro, rotate = TRUE) + theme(axis.text.x = element_blank())
+
+gene_order <- order.dendrogram(dendro)
+
+plot_multiheatmap(filter(a_wide, target.id %in% longevity_multimorb$target.id), sort_nmorb = TRUE)
+dendro_heatmap <- plot_multiheatmap(filter(a_wide, target.id %in% longevity_multimorb$target.id), gene_order = gene_order)
+
+final_heatmap <- dendro_heatmap + dendro.plot
+ggsave(final_heatmap, file = "longevity_heatmap.png", width=12, height=10, dpi=900)
+
+t <- a_wide %>% filter(target.gene_info.symbol %in% c("CHRNA3", "CHRNA4", "CHRNA5")) %>% 
+  mutate(safety_warning = as.integer(target.gene_info.symbol %in% unsafe_targets))
+
+
+
+```

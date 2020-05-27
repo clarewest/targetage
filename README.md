@@ -11,7 +11,7 @@ The goal of targetage is to ...
 You can install the released version of targetage from [CRAN](https://CRAN.R-project.org) with:
 
 ``` r
-install.packages("targetage")
+install.packages("agetargetR")
 ```
 
 ## Example
@@ -50,6 +50,15 @@ sgc_queries = list(
       )
 
 plot_upset(associations_wide = a_sgc, queries = sgc_queries)
+
+targetofinterest <- "ENSG00000258366"
+target_query =  list(
+      query = elements,
+      params = list("target.id", targetofinterest),
+      active = T,
+      query.name = targetofinterest
+    )
+
 
 ## generate a heatmap plot showing the associations for a given gene
 plot_heatmap(a_wide, "APOE")
