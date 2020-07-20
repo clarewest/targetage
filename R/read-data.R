@@ -5,16 +5,14 @@
 #' @param morbidity_file string. The csv file containing the morbidities list. The
 #'    file should consist of two columns: the disease.id (EFO code) and the
 #'    human-readable morbidity name. Lines commented out using # are ignored.
+#' @param colnames vector. Column names for the file
 #' @return Returns a dataframe with the morbidities and EFO codes
-#' @examples
-#' read_diseases(associations)
-#' read_diseases(associations, filename = "controls_list.csv")
 #' @importFrom dplyr mutate mutate_if rename select starts_with contains funs
 #' @export
-read_diseases = function(morbidity_file = "disease_list.csv") {
+read_diseases = function(morbidity_file = "disease_list.csv", colnames = c("disease.id","morbidity")) {
   d <- read.csv(
     morbidity_file,
-    col.names = c("disease.id", "morbidity"),
+    col.names = colnames,
     comment.char = "#",
     stringsAsFactors = FALSE,
     header = FALSE
@@ -38,9 +36,8 @@ read_diseases = function(morbidity_file = "disease_list.csv") {
 #' @return Returns the \code{associations} dataframe joined with morbidities
 #'    added as an extra columns.
 #' @examples
-#' read_associations()
-#' read_associations(controls = TRUE, controlfilename = "control_associations.csv")
-#' read_associations(remove_morbitities = c("premature ageing", "arthritis", NA))
+#' \dontrun{read_associations(controls = TRUE, controlfilename = "control_associations.csv")}
+#' \dontrun{read_associations(remove_morbitities = c("premature ageing", "arthritis", NA))}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr bind_rows full_join rename_at filter
 #' @export
@@ -94,8 +91,7 @@ read_associations = function(filepath = NULL,
 #'    all association scores for all datatypes are returned.
 #' @return Returns a dataframe containing target associations with Longevity
 #' @examples
-#' read_longevity()
-#' read_longevity(all_dataypes = TRUE)
+#' \dontrun{read_longevity(all_dataypes = TRUE)}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr bind_rows full_join rename_at filter
 #' @export
@@ -146,8 +142,7 @@ read_longevity <- function(associations,
 #'    all association scores for all datatypes are returned.
 #' @return Returns a dataframe containing target associations with Longevity
 #' @examples
-#' read_longevity()
-#' read_longevity(all_dataypes = TRUE)
+#' \dontrun{read_longevity(all_dataypes = TRUE)}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr bind_rows full_join rename_at filter
 #' @export
@@ -156,4 +151,27 @@ read_safety <- function(filepath = NULL,
                            from_file = FALSE){
   raw_json <- jsonlite::fromJSON(paste0(filepath, filename))
   return(raw_json)
+}
+
+#' Read in GO Process annotations data
+#'
+#' Read in targets associated with GO terms from QuickGO annotation file
+#'
+#' @param filename string. Name of QuickGO annotation file
+#' @param filepath string. Path to files
+#' @return Returns a dataframe containing the GO term associations
+#' @export
+read_GO <- function(filepath = NULL,
+                    filename = "databases/QuickGO-annotations-1590524472235-20200526.tsv")
+{
+    go <-
+      read.csv(
+        paste0(
+          filepath,
+          filename
+        ),
+        sep = "\t",
+        stringsAsFactors = FALSE
+      )
+    return(go)
 }

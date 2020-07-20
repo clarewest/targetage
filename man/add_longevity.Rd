@@ -30,6 +30,6 @@ Returns the \code{associations} dataframe joined with Longevity data as extra co
 Add data for targets associated with longevity, based on genetic association from Open Targets
 }
 \examples{
-add_longevity(associations)
-add_longevity(associations, all_datatypes = TRUE)
+\dontrun{add_longevity(associations)}
+\dontrun{add_longevity(associations, all_datatypes = TRUE)}
 }

@@ -95,10 +95,12 @@ multimorb <- a_wide %>% select(target.id, target.gene_info.symbol, contains("ass
 genes <- paste0(multimorb$target.gene_info.symbol, sep=",", collapse="")
 longevity_multimorb <- filter(multimorb, nsum>1, sort_nmorb = TRUE)
 
+go <- read_GO(dir)
 pre_mat <- a_wide %>%
   filter(target.id %in% longevity_multimorb$target.id) %>% 
   select(target.gene_info.symbol, contains("association_score.overall")) %>% 
   rename_all(stringr::str_replace, pattern = ".association_score.overall",replacement = "")
+#  left_join(go %>% rename(target.gene_info.symbol = SYMBOL)) 
 
 library(ggdendro)
 mat <- as.matrix(pre_mat[,-1])
@@ -112,11 +114,25 @@ plot_multiheatmap(filter(a_wide, target.id %in% longevity_multimorb$target.id), 
 dendro_heatmap <- plot_multiheatmap(filter(a_wide, target.id %in% longevity_multimorb$target.id), gene_order = gene_order)
 
 final_heatmap <- dendro_heatmap + dendro.plot
-ggsave(final_heatmap, file = "longevity_heatmap.png", width=12, height=10, dpi=900)
+ggsave(final_heatmap, file = "longevity_heatmap.png", width=12, height=10, dpi=600)
 
 t <- a_wide %>% filter(target.gene_info.symbol %in% c("CHRNA3", "CHRNA4", "CHRNA5")) %>% 
   mutate(safety_warning = as.integer(target.gene_info.symbol %in% unsafe_targets))
 
+pathway_longevity <- pre_mat %>% inner_join(go %>% rename(target.gene_info.symbol = SYMBOL)) %>% select(target.gene_info.symbol, GO.NAME)
+plot_multiheatmap(filter(a_wide, target.gene_info.symbol %in% unique(pathway_longevity$target.gene_info.symbol)))
+
+interesting <- filter(a_wide, target.gene_info.symbol %in% c("APOC1","CHRNA3", "CHRNA4", "CHRNA5", unique(pathway_longevity$target.gene_info.symbol))) 
+unsafe_targets <- map(safety_json, names) %>% unlist() %>% names()
+interesting$safety_warning <- as.integer(interesting$target.gene_info.symbol %in% unsafe_targets)
+safety_json$CHRNA4$adverse_effects 
+
+
+interesting_nsum <- interesting %>%
+select(target.id, target.gene_info.symbol, contains("association_score.datatypes.genetic_association")) %>% filter(longevity.association_score.datatypes.genetic_association>=0.05) %>% mutate_if(is.numeric, funs(ifelse(.>=0.05, 1, 0))) %>% mutate(nsum = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% select(target.gene_info.symbol, nsum, contains("association"))
+
+interesting_heatmap <- plot_multiheatmap(interesting, sort_nmorb = TRUE) + geom_text(aes(label = round(value, 1)))
+ggsave(interesting_heatmap, file = "interesting_heatmap.png", width=12, height=4, dpi=600)
 
 
 ```

@@ -8,8 +8,8 @@
 #' @param filepath string. Path to files
 #' @return Returns the \code{associations} dataframe joined with GenAge data as extra columns.
 #' @examples
-#' add_genage(associations)
-#' add_genage(associations, human = TRUE, mouse = FALSE)
+#' \dontrun{add_genage(associations)}
+#' \dontrun{add_genage(associations, human = TRUE, mouse = FALSE)}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr mutate mutate_if rename select left_join
 #' @export
@@ -86,8 +86,8 @@ add_genage <-
 #'    within the associations dataframe
 #' @return Returns the \code{associations} dataframe joined with Longevity data as extra columns.
 #' @examples
-#' add_longevity(associations)
-#' add_longevity(associations, all_datatypes = TRUE)
+#' \dontrun{add_longevity(associations)}
+#' \dontrun{add_longevity(associations, all_datatypes = TRUE)}
 #' @export
 add_longevity <-
   function(associations,
@@ -115,8 +115,6 @@ add_longevity <-
 #' @param associations dataframe. The target-disease associations
 #' @param filepath string. Path to files
 #' @return Returns the \code{associations} dataframe with AD.sgc.target and PD.sgc.target as extra columns.
-#' @examples
-#' add_adpd_targets(associations)
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr mutate rename select left_join
 #' @export

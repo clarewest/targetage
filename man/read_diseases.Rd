@@ -4,20 +4,21 @@
 \alias{read_diseases}
 \title{Read Morbidities}
 \usage{
-read_diseases(morbidity_file = "disease_list.csv")
+read_diseases(
+  morbidity_file = "disease_list.csv",
+  colnames = c("disease.id", "morbidity")
+)
 }
 \arguments{
 \item{morbidity_file}{string. The csv file containing the morbidities list. The
 file should consist of two columns: the disease.id (EFO code) and the
 human-readable morbidity name. Lines commented out using # are ignored.}
+
+\item{colnames}{vector. Column names for the file}
 }
 \value{
 Returns a dataframe with the morbidities and EFO codes
 }
 \description{
 Reads in the list of morbidities used to query Open Targets for associations
-}
-\examples{
-read_diseases(associations)
-read_diseases(associations, filename = "controls_list.csv")
 }

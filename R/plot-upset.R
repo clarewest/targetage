@@ -19,14 +19,14 @@
 #' @return Returns an UpSetR plot showing the number of targets associated with
 #'    each combination of morbidities
 #' @examples
-#' plot_upset(df, morbidities_intersection = list("heart_disease","neurodegenerative_disease", "longevity"))
-#' plot_upset(associations = df, association_type = "overall", only_longevity = TRUE)
+#' \dontrun{plot_upset(df, morbidities_intersection = list("heart_disease","neurodegenerative_disease", "longevity"))}
+#' \dontrun{plot_upset(associations = df, association_type = "overall", only_longevity = TRUE)}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr mutate mutate_if rename select starts_with contains funs
 #' @export
 plot_upset <-
-  function(associations_wide,
-           associations = NULL,
+  function(associations = NULL,
+           associations_wide = NULL,
            association_type = "genetic",
            only_longevity = TRUE,
            morbidities_intersection = list("heart_disease", "neurodegenerative_disease", "longevity"),

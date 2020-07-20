@@ -9,7 +9,7 @@
 #' @param save logical. If true, the plot is saved, with the default name
 #' @return Returns a heatmap showing the association of a gene with each morbidity
 #' @examples
-#' plot_heatmap("APOE")
+#' \dontrun{plot_heatmap("APOE")}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr mutate select filter left_join
 #' @importFrom tidyr pivot_longer
@@ -112,7 +112,7 @@ plot_heatmap <-
 #' @return Returns a heatmap showing the overall association score of each
 #'  target with each morbidity
 #' @examples
-#' plot_multiheatmap(some_associations)
+#' \dontrun{plot_multiheatmap(some_associations)}
 #' @importFrom magrittr '%>%'
 #' @importFrom dplyr mutate select filter left_join
 #' @importFrom tidyr pivot_longer
@@ -146,6 +146,7 @@ plot_multiheatmap <- function(associations, save = FALSE, sort_nmorb = FALSE, ge
     df <- df %>%
       mutate(target.gene_info.name = factor(target.gene_info.name, levels = unique(name_order)))
   }
+  df <- df %>% mutate(target.gene_info.name = paste0(target.gene_info.name, " (", target.gene_info.symbol,")"))
   heatmap <-
     ggplot(df, aes(x = name, y = target.gene_info.name, fill = value)) +
     geom_tile(colour = "black", size = 0.3) +

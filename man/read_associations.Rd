@@ -38,7 +38,6 @@ Reads in the list of target-disease associations retrieved from Open Targets
 for the list of morbidities.
 }
 \examples{
-read_associations()
-read_associations(controls = TRUE, controlfilename = "control_associations.csv")
-read_associations(remove_morbitities = c("premature ageing", "arthritis", NA))
+\dontrun{read_associations(controls = TRUE, controlfilename = "control_associations.csv")}
+\dontrun{read_associations(remove_morbitities = c("premature ageing", "arthritis", NA))}
 }

@@ -1,0 +1,259 @@
+---
+title: "June17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Target pipeline
+
+```{r }
+library(targetage)
+library(tidyverse)
+
+dir = "~/work/ageing-target-pipeline/"
+## read in the associations file, add data from genage and targets associated with longevity
+a <- read_associations(filepath = dir, remove_morbidities = c("premature ageing", NA)) %>%
+  add_genage(filepath = dir) 
+
+## We're interested in genetic associations
+a <- a %>% filter(association_score.datatypes.genetic_association >= 0.05)
+a_long <- a %>% add_longevity(from_file = FALSE)
+
+
+## convert the associations to wide format
+a_wide <- widen_associations(a) %>%
+  add_genage(filepath = dir)
+
+```
+
+How many targets are there?
+
+```{r}
+a %>% count(target.gene_info.symbol) %>% nrow()
+
+```
+
+
+```{r}
+
+n_morbidity <- a %>% count(morbidity) 
+d = read_diseases(morbidity_file = paste0(dir, "disease_list.csv"))
+ignore <- d %>% filter( ! morbidity %in% n_morbidity$morbidity)
+
+## Upset plot
+measures = c("adiponectin measurement", "cognitive decline measurement" , "gait measurement", "grip strength measurement", "lipid measurement", "cartilage thickness measurement" )
+
+## generate an UpSetR plot
+plot_upset(associations_wide = a_wide, only_longevity = FALSE, morbidities_ignore = ignore)
+plot_upset(associations_wide = a_wide, only_longevity = FALSE, morbidities_ignore = measures)
+
+pre_mat <-
+  a %>% select(
+    morbidity,
+    target.gene_info.symbol,
+    association_score.datatypes.genetic_association
+  )  %>% pivot_wider(
+    id_cols = target.gene_info.symbol,
+    names_from = morbidity,
+    values_from = association_score.datatypes.genetic_association,
+    values_fn = max,
+    values_fill = 0
+  )
+
+pre_mat <- dc %>% select(-disease.id) %>% pivot_longer(cols = c("neuropsychiatric","musculoskeletal","cardiometabolic")) %>% pivot_wider(names_from = morbidity,  values_from = value) %>% rename(target.gene_info.symbol = name) %>% bind_rows(pre_mat)
+pre_mat.multi <- pre_mat %>% filter(rowSums(select(., where(is.numeric)) > 0.05, na.rm = TRUE) > 1)
+
+mat <- as.matrix(pre_mat.multi[, -1])
+rownames(mat) <- pre_mat.multi$target.gene_info.symbol
+
+
+library(ggdendro)
+library(lsa)
+mat <- as.matrix(pre_mat.multi[,-1])
+mat[is.na(mat)] <- 0
+rownames(mat) <- pre_mat$target.gene_info.symbol
+
+binary_mat <- mat > 0
+h_binary <- heatmap(cosine(binary_mat*1), symm = TRUE)
+h_genassoc <- heatmap(cosine(mat), symm = TRUE)
+  
+dendro <- as.dendrogram(hclust(d = dist(x = t(mat))))
+d = dist(x = t(mat), upper = TRUE, diag = TRUE)
+
+heatmap(mat)
+
+heatmap(as.matrix(dist(x = t(mat))), symm = TRUE)
+heatmap(cor(mat, method = "pearson"), symm = TRUE)
+heatmap(cosine(mat), symm = TRUE)
+
+dendro.plot <- ggdendrogram(data = dendro, rotate = TRUE) + theme(axis.text.x = element_blank())
+## cosine similarity or not
+gene_order <- order.dendrogram(dendro)
+
+ggplot(, aes(x = morbidity, y = datatype, fill = value)) +
+  geom_tile(colour = "black", size = 0.3) +
+  coord_equal() +
+  theme_bw(base_size = 10) +
+  scale_y_discrete(expand = c(0, 0)) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_fill_gradient(
+    "score",
+    low = "white",
+    high = "steelblue",
+    na.value = 'gray90',
+    limits = c(0, 1),
+    guide = guide_colorbar(frame.colour = "black", frame.linewidth = 0.8)
+  ) +
+  theme(
+    axis.text.x = element_text(
+      colour = textcol,
+      angle = 45,
+      hjust = 1
+    ),
+    axis.text.y = element_text(vjust = 0.2, colour = textcol),
+    axis.ticks = element_line(size = 0.4),
+    axis.title = element_blank(),
+    plot.background = element_blank(),
+    plot.margin = margin(0.7, 0.4, 0.1, 0.2, "cm"),
+    plot.title = element_text(
+      colour = textcol,
+      hjust = 0,
+      size = 14,
+      face = "bold"
+    ),
+    panel.border = element_rect(colour = "black", size = 0.8)
+  )
+
+
+dendro_heatmap <- plot_multiheatmap(filter(a_wide, target.id %in% longevity_multimorb$target.id), gene_order = gene_order)
+
+
+library(ggfortify)
+mat[is.na(mat)] <- 0
+mat.pca <- prcomp(mat, center = TRUE)
+summary(mat.pca)
+autoplot(mat.pca, data = mat.pca, loadings = TRUE, loadings.labels = true)
+
+mat2.pca <- prcomp(t(mat), center = TRUE)
+autoplot(mat2.pca, data = mat2.pca)
+
+
+# only look at multimorb targets
+# randomise columns
+
+
+
+```
+
+```{r}
+## Reading in genetic evidence data from OT
+## NB it's NDJSON (newline-delimited)
+library(jsonlite)
+dir = "~/work/ageing-target-pipeline/"
+gen_json <-
+  stream_in(file(paste0(dir, "disease_genetic_evidence.json")))
+flat_gen <-
+  gen_json %>% select(-validated_against_schema_version,-access_level) %>% flatten() %>% tibble::as_data_frame()
+flat_gen <- flat_gen %>% filter(query_EFO != "<NA>")
+to_merge <-
+  flat_gen %>% select(
+    sourceID,
+    type,
+    genetics_portal_id = id,
+    target.id,
+    query_EFO,
+    target.target_type,
+    target.activity,
+    variant.rs_id,
+    variant.type,
+    variant.id,
+    disease.specific_id = disease.id,
+    disease.id = query_EFO,
+    disease.reported_trait,
+    disease.efo_info.label.genetics_portal = disease.efo_info.label,
+    evidence.variant2disease.gwas_sample_size,
+    evidence.variant2disease.odds_ratio,
+    evidence.variant2disease.confidence_interval,
+    evidence.variant2disease.resource_score.type,
+    evidence.variant2disease.resource_score.value,
+    evidence.variant2disease.resource_score.method.description,
+    evidence.gene2variant.consequence_code,
+    evidence.gene2variant.resource_score.type,
+    evidence.gene2variant.resource_score.value,
+    evidence.gene2variant.resource_score.method.description,
+    scores.association_score
+  )
+
+to_merge %>% count(evidence.gene2variant.consequence_code) %>% arrange(-n)
+a_gen <- a %>% left_join(to_merge, by = c("disease.id", "target.id"))
+
+
+missense <-
+  flat_gen %>% filter(evidence.gene2variant.consequence_code == "missense_variant")
+a_missense <-
+  a_gen %>% filter(evidence.gene2variant.consequence_code == "missense_variant") %>% group_by(disease.id, target.id) %>% top_n(1, scores.association_score) %>% ungroup()
+
+a_wide
+
+library(ggrepel)
+
+plot_multimorbidity <- function(associations_wide, min_label = 6){
+  p <- associations_wide %>% 
+    multimorbidity_count(multimorbidityscore = TRUE, multimorbiditymean = TRUE) %>% 
+    mutate(label = ifelse(multimorbidity.count >= min_label, target.gene_info.symbol, NA)) %>% 
+    ggplot(., aes(x=multimorbidity.count, y=multimorbidity.score, label = label, colour = multimorbidity.mean)) + 
+    geom_point() + 
+    theme_bw() + 
+    geom_text_repel() + 
+    scale_x_continuous(breaks = seq(0, 15, 1), limits = c(0, 13), expand = c(0,0)) + 
+    scale_y_continuous(expand = c(0,0), limits = c(0, 8))
+  return(p)
+}
+
+p <- a %>% filter(! morbidity %in% measures) %>% widen_associations() %>% plot_multimorbidity(min_label = 4)
+
+
+```
+
+```{r}
+
+min_chembl = 5
+
+tract <- read_tsv("~/work/ageing-target-pipeline/databases/tractability_buckets-2020-05-14.tsv") %>% rename(target.id = ensembl_gene_id)
+
+list_tract <- tract %>% filter(target.id %in% a_wide$target.id) %>%
+  mutate(High_Quality_ChEMBL_compounds = ifelse(is.na(High_Quality_ChEMBL_compounds), 0, High_Quality_ChEMBL_compounds)) %>%
+  mutate(no_compounds = ifelse(High_Quality_ChEMBL_compounds == 0, TRUE, FALSE))
+
+list_tract  %>% group_by(Category_sm, no_compounds) %>% count() %>% ggplot(., aes(y=Category_sm, x = n, fill = no_compounds, label = n))  + geom_bar(stat = "identity") + theme_minimal() + geom_text() 
+
+a_wider <- list_tract %>% inner_join(a_wide, by = "target.id") %>% left_join(genes2 %>% select(age_of_onset.cluster, symbol) %>% unique(), by = "symbol")
+a_wider %>% filter(!is.na(age_of_onset.cluster)) %>% group_by(age_of_onset.cluster) %>% filter(!str_detect(age_of_onset.cluster, "3")) %>% nrow()
+
+p <- a_wider %>% plot_multimorbidity() + facet_wrap(~no_compounds)
+
+
+## clusters
+
+
+dc = read_diseases(morbidity_file = paste0(dir, "disease_list_clusters.csv"), colnames = c("disease.id", "morbidity","neuropsychiatric", "musculoskeletal", "cardiometabolic"))
+dc %>% select(-disease.id) %>% summarise_if(is.numeric, list(sum), na.rm = TRUE)
+
+dc %>% select(-disease.id) %>% pivot_longer(-morbidity) %>% filter(! morbidity %in% measures) %>% ggplot(., aes(x=name, y=morbidity, fill=as.character(value))) + geom_tile(colour="white") + theme_bw() + coord_equal()
+
+
+```
+
+Melike's work
+
+```{r}
+clusters <- read_tsv("~/work/melike/2020.06.16.20132621-2.tsv")
+genes <- read_tsv("~/work/melike/2020.06.16.20132621-5.tsv")
+genes2 <- genes %>% separate_rows(Genes, sep = ", ") 
+names(genes2) <- c("age_of_onset.cluster", "age_of_onset.type", "age_of_onset.n_genes", "symbol")
+
+
+```

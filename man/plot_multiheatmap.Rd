@@ -4,7 +4,12 @@
 \alias{plot_multiheatmap}
 \title{Plot Multi-Heatmap}
 \usage{
-plot_multiheatmap(associations, save = FALSE)
+plot_multiheatmap(
+  associations,
+  save = FALSE,
+  sort_nmorb = FALSE,
+  gene_order = NULL
+)
 }
 \arguments{
 \item{associations}{dataframe. The target-disease associations in wide
@@ -22,5 +27,5 @@ target with each morbidity
 Plots a heatmap of the associations for a subset of genes
 }
 \examples{
-plot_multiheatmap(some_associations)
+\dontrun{plot_multiheatmap(some_associations)}
 }

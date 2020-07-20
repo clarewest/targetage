@@ -22,6 +22,6 @@ Returns the \code{associations} dataframe joined with GenAge data as extra colum
 Add the data from GenAge, a curated database of human ageing-related genes (\code{human}) and a database of ageing- and longevity- associated genes in mice (\code{mouse})
 }
 \examples{
-add_genage(associations)
-add_genage(associations, human = TRUE, mouse = FALSE)
+\dontrun{add_genage(associations)}
+\dontrun{add_genage(associations, human = TRUE, mouse = FALSE)}
 }

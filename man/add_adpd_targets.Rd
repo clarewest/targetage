@@ -23,6 +23,3 @@ Returns the \code{associations} dataframe with AD.sgc.target and PD.sgc.target a
 \description{
 Add the targets being persued at the SGC for Alzheimers and Parkinsons
 }
-\examples{
-add_adpd_targets(associations)
-}

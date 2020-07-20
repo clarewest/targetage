@@ -23,5 +23,5 @@ Returns a heatmap showing the association of a gene with each morbidity
 Plots a heatmap of the associations for an individual gene
 }
 \examples{
-plot_heatmap("APOE")
+\dontrun{plot_heatmap("APOE")}
 }

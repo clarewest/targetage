@@ -5,22 +5,23 @@
 \title{UpSetR plot}
 \usage{
 plot_upset(
-  associations_wide,
   associations = NULL,
+  associations_wide = NULL,
   association_type = "genetic",
   only_longevity = TRUE,
   morbidities_intersection = list("heart_disease", "neurodegenerative_disease",
     "longevity"),
-  morbidities_ignore = NULL
+  morbidities_ignore = NULL,
+  queries = NULL
 )
 }
 \arguments{
+\item{associations}{dataframe. The target-disease associations in long
+format, in which each row is a target-disease association}
+
 \item{associations_wide}{dataframe. The target-disease associations in wide
 format, in which each row is a unique target and the associations with
 different morbidities are columns}
-
-\item{associations}{dataframe. The target-disease associations in long
-format, in which each row is a target-disease association}
 
 \item{association_type}{string. The type of association to include in the
 plot, e.g. "genetic" or "overall" associations}
@@ -32,6 +33,8 @@ longevity are included in the plot}
 intersection should be highlighted in the plot}
 
 \item{morbidities_ignore}{vector. Morbidities to ignore when plotting}
+
+\item{queries}{list. Custom queries}
 }
 \value{
 Returns an UpSetR plot showing the number of targets associated with
@@ -42,6 +45,6 @@ Generates an UpSetR plot for the number of targets associated with each
 combination of morbidities
 }
 \examples{
-plot_upset(df, morbidities_intersection = list("heart_disease","neurodegenerative_disease", "longevity"))
-plot_upset(associations = df, association_type = "overall", only_longevity = TRUE)
+\dontrun{plot_upset(df, morbidities_intersection = list("heart_disease","neurodegenerative_disease", "longevity"))}
+\dontrun{plot_upset(associations = df, association_type = "overall", only_longevity = TRUE)}
 }

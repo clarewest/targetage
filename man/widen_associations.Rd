@@ -21,5 +21,5 @@ association) to wide format (in which each row is a unique target and the associ
 different morbidities are columns)
 }
 \examples{
-associations_wide <- widen_associations(associations)
+\dontrun{associations_wide <- widen_associations(associations)}
 }
