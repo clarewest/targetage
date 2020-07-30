@@ -56,11 +56,9 @@ plot_upset <-
     new_names <-
       colnames(binary_associations) %>% stringr::str_remove(., paste0(".", type_filter))
     colnames(binary_associations) <- new_names
-    print(new_names)
 
     ## Remove non-diseases and the morbidities to ignore
     diseases <- new_names[! new_names %in% c("target.id", "GenAge.human", "AD.sgc.target", "PD.sgc.target", stringr::str_replace_all(morbidities_ignore, ' ', "_"))]
-    print(diseases)
 
     ## Only select targets that are associated with longevity
     if (only_longevity){
