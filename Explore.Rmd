@@ -5,23 +5,25 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(targetage)
+library(tidyverse)
 ```
 
 ## Target pipeline
+Set-up by setting the path to the pipeline and reading in the data
+
 
 ```{r }
-library(targetage)
-library(tidyverse)
 
 dir = "~/work/ageing-target-pipeline/"
+
 ## read in the associations file, add data from genage and targets associated with longevity
 a <- read_associations(filepath = dir, remove_morbidities = c("premature ageing", NA)) %>%
   add_genage(filepath = dir) 
 
 ## We're interested in genetic associations
-a <- a %>% filter(association_score.datatypes.genetic_association >= 0.05)
+a <- a %>% filter(association_score.datatypes.genetic_association >= 0.5)
 a_long <- a %>% add_longevity(from_file = FALSE)
-
 
 ## convert the associations to wide format
 a_wide <- widen_associations(a) %>%
@@ -29,7 +31,7 @@ a_wide <- widen_associations(a) %>%
 
 ```
 
-How many targets are there?
+How many targets are there for these morbidities?
 
 ```{r}
 a %>% count(target.gene_info.symbol) %>% nrow()
@@ -39,6 +41,7 @@ a %>% count(target.gene_info.symbol) %>% nrow()
 
 ```{r}
 
+## get a list of morbidities that had at least one target
 n_morbidity <- a %>% count(morbidity) 
 d = read_diseases(morbidity_file = paste0(dir, "disease_list.csv"))
 ignore <- d %>% filter( ! morbidity %in% n_morbidity$morbidity)
@@ -50,6 +53,9 @@ measures = c("adiponectin measurement", "cognitive decline measurement" , "gait 
 plot_upset(associations_wide = a_wide, only_longevity = FALSE, morbidities_ignore = ignore)
 plot_upset(associations_wide = a_wide, only_longevity = FALSE, morbidities_ignore = measures)
 
+
+## Prepare for PCA 
+## prepare a dataframe of targets x diseases associations
 pre_mat <-
   a %>% select(
     morbidity,
@@ -63,22 +69,602 @@ pre_mat <-
     values_fill = 0
   )
 
-pre_mat <- dc %>% select(-disease.id) %>% pivot_longer(cols = c("neuropsychiatric","musculoskeletal","cardiometabolic")) %>% pivot_wider(names_from = morbidity,  values_from = value) %>% rename(target.gene_info.symbol = name) %>% bind_rows(pre_mat)
-pre_mat.multi <- pre_mat %>% filter(rowSums(select(., where(is.numeric)) > 0.05, na.rm = TRUE) > 1)
 
+
+## take only targets associated with at least 2 diseases
+pre_mat.multi <- pre_mat %>% filter(rowSums(select(., where(is.numeric)) > 0.5, na.rm = TRUE) > 1)
+
+## make into a matrix
 mat <- as.matrix(pre_mat.multi[, -1])
 rownames(mat) <- pre_mat.multi$target.gene_info.symbol
 
+
+library(ggfortify)
+
+## Replace no evidence with 0 association
+mat[is.na(mat)] <- 0
+
+## make it binary
+#mat[mat>0] <- 1
+
+## perform PCA
+mat.pca <- prcomp(mat, center = TRUE)
+#autoplot(mat.pca, data = mat.pca, loadings = TRUE, loadings.labels = true)
+
+mat.pca$x %>% as.data.frame() %>% tibble::rownames_to_column() %>% rename(target = rowname) %>% mutate(label = ifelse(target %in% clusternames, target, NA )) %>% ggplot(., aes(x=PC1, y=PC2)) + geom_point()
+
+## make a matrix out of the disease clusters to project onto PCA later
+dc_df <- dc %>% select(-disease.id) %>% pivot_longer(cols = c("neuropsychiatric","musculoskeletal","cardiometabolic")) %>% pivot_wider(names_from = morbidity,  values_from = value) %>% rename(target.gene_info.symbol = name) %>% select(target.gene_info.symbol, colnames(mat))
+# these don't have any multimorbidity genes:
+# "premature ageing"    "sarcopenia"          "frailty measurement" "gait measurement" 
+dc_mat <- as.matrix(dc_df[, -1])
+rownames(dc_mat) <- dc_df$target.gene_info.symbol
+dc_mat[is.na(dc_mat)] <- 0
+
+## Project clusters onto the plot 
+dc_mat.sc <- scale(dc_mat, center = mat.pca$center)
+dc_mat.pred <- dc_mat.sc %*% mat.pca$rotation 
+
+mat.dc.pca <- mat.pca
+mat.dc.pca$x <- rbind(mat.dc.pca$x, dc_mat.pred )
+
+clusternames= colnames(dc)[3:5]
+
+mat.dc.pca$x %>% as.data.frame() %>% tibble::rownames_to_column() %>% rename(target = rowname) %>% mutate(label = ifelse(target %in% clusternames, target, NA )) %>% ggplot(., aes(x=PC1, y=PC2, label=label, colour = label)) + geom_point() + geom_text() + theme_bw()
+
+
+
+## cluster with kmeans
+pca.clusters <- kmeans(mat.pca$x[,1:2],4)
+save(pca.clusters, file="~/work/shinytargetage/data/cluster_data.Rda")
+save(mat.pca, file="~/work/shinytargetage/data/pca_data.Rda")
+autoplot(pca.clusters, data=mat.pca$x[,1:2])
+
+cluster.df <- as.data.frame(pca.clusters$cluster, nm="cluster") %>% tibble::rownames_to_column() %>% rename(target = rowname)
+pca.df <- mat.pca$x %>% as.data.frame() %>% tibble::rownames_to_column() %>% rename(target = rowname) %>% 
+inner_join(cluster.df, by = "target")
+save(pca.df, file="~/work/shinytargetage/data/pca_df.Rda")
+  
+### plot melike's clusters
+pca.df %>% left_join(genes2 %>% rename(target = symbol)) %>% mutate(melike_cluster = ifelse(age_of_onset.cluster %in% c("1", "2", "3"), age_of_onset.cluster, ifelse(is.na(age_of_onset.cluster), age_of_onset.cluster, "mix"))) %>% 
+  ggplot(., aes(x=PC1, y=PC2, colour = melike_cluster)) + geom_point() + theme_bw()
+
+
+## plot variance against PCs
+data.frame(PC=seq(1,33), variance = mat.pca$sdev^2/sum(mat.pca$sdev^2)) %>% ggplot(., aes(x=PC, y=variance)) + geom_point() + geom_line()
+
+mat.pca$rotation %>% as.data.frame() %>% tibble::rownames_to_column() %>% rename(morbidity = rowname) %>% select(morbidity, PC1, PC2, PC3, PC4, PC5, PC6) %>% pivot_longer(-morbidity) %>% ggplot(., aes(x=morbidity, y=value)) + geom_col() + facet_wrap(~name) + theme(axis.text.x = element_text(angle = 90))
+
+
+### Go enrichment for clusters
+library(clusterProfiler)
+library(ReactomePA)
+
+entrez_ot = bitr(cluster.df$target, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db") %>% mutate(target = SYMBOL)
+list_ot <- cluster.df %>% inner_join(entrez_ot) %>% dplyr::select(-SYMBOL, -target)  %>% group_split(cluster, .keep = FALSE) 
+list_ot_cluster <- list("All" = ot_all$ENTREZID,
+                        "One" = list_ot[[1]]$ENTREZID,
+                        "Two" = list_ot[[2]]$ENTREZID,
+                        "Three" = list_ot[[3]]$ENTREZID,
+                        "Four" = list_ot[[4]]$ENTREZID)
+cluster_compa <- compareCluster(geneCluster = list_ot_cluster, fun = "enrichPathway")
+
+ot_all <- bitr(cluster.df$target, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
+list_all <- list("ot" = ot_all$ENTREZID)
+cluster_compa_ot <- compareCluster(geneCluster = list_all, fun = "enrichPathway")
+
+
+dotplot(cluster_compa_ot, showCategory = 15)
+dotplot(cluster_compa, showCategory = 15)
+dotplot(cluster_compa_genage, showCategory = 15) + scale_colour_continuous(trans="log10")
+
+
+
+```
+
+
+Add the genetic evidence data from Open Targets
+
+```{r}
+## Reading in genetic evidence data from OT
+## NB it's NDJSON (newline-delimited)
+library(jsonlite)
+
+if (0){
+dir = "~/work/ageing-target-pipeline/"
+gen_json <-
+  stream_in(file(paste0(dir, "disease_genetic_evidence.json")))
+flat_gen <-
+  gen_json %>% select(-validated_against_schema_version,-access_level) %>% jsonlite::flatten() %>% tibble::as_data_frame()
+flat_gen <- flat_gen %>% filter(query_EFO != "<NA>")
+to_merge <-
+  flat_gen %>% select(
+    sourceID,
+    type,
+    genetics_portal_id = id,
+    target.id,
+    query_EFO,
+    target.target_type,
+    target.activity,
+    variant.rs_id,
+    variant.type,
+    variant.id,
+    disease.specific_id = disease.id,
+    disease.id = query_EFO,
+    disease.reported_trait,
+    disease.efo_info.label.genetics_portal = disease.efo_info.label,
+    unique_association_fields.study,
+    evidence.variant2disease.gwas_sample_size,
+    evidence.variant2disease.odds_ratio,
+    evidence.variant2disease.confidence_interval,
+    evidence.variant2disease.resource_score.type,
+    evidence.variant2disease.resource_score.value,
+    evidence.variant2disease.resource_score.method.description,
+    evidence.gene2variant.consequence_code,
+    evidence.gene2variant.resource_score.type,
+    evidence.gene2variant.resource_score.value,
+    evidence.gene2variant.resource_score.method.description,
+    scores.association_score
+  )
+
+to_merge %>% count(evidence.gene2variant.consequence_code) %>% arrange(-n)
+a_gen <- a %>% left_join(to_merge, by = c("disease.id", "target.id")) %>%
+  mutate(gwas_study_id = basename(unique_association_fields.study))
+save(a_gen, file = "associations_genetic_evidence.Rda")
+} else {
+  load("associations_genetic_evidence.Rda")
+}
+
+missense <-
+  flat_gen %>% filter(evidence.gene2variant.consequence_code == "missense_variant")
+a_missense <-
+  a_gen %>% filter(evidence.gene2variant.consequence_code == "missense_variant") %>% group_by(disease.id, target.id) %>% slice(which.max(scores.association_score)) %>% ungroup() %>% select(disease.id, target.id, everything())
+
+a_missense_wide <- widen_associations(a_missense) 
+a_missense_wider <- list_tract %>% inner_join(a_missense_wide, by = "target.id") %>% left_join(genes2 %>% select(age_of_onset.cluster, symbol) %>% unique(), by = "symbol")
+
+save(a_missense_wider, file = "~/work/shinytargetage/data/missense_associations.Rda")
+plot_upset(associations_wide= a_missense_wide %>% mutate(GenAge.human = 0))
+
+a_wide
+
+library(ggrepel)
+
+plot_multimorbidity <- function(associations_wide, min_label = 6){
+  p <- associations_wide %>% 
+    multimorbidity_count(multimorbidityscore = TRUE, multimorbiditymean = TRUE) %>% 
+    mutate(label = ifelse(multimorbidity.count >= min_label, target.gene_info.symbol, NA)) %>% 
+    ggplot(., aes(x=multimorbidity.count, y=multimorbidity.score, label = label, colour = multimorbidity.mean)) + 
+    geom_point() + 
+    theme_bw() + 
+    geom_text_repel() + 
+    scale_x_continuous(breaks = seq(0, 15, 1), limits = c(0, 13), expand = c(0,0)) + 
+    scale_y_continuous(expand = c(0,0), limits = c(0, 8))
+  return(p)
+}
+
+p <- a %>% filter(! morbidity %in% measures) %>% widen_associations() %>% plot_multimorbidity(min_label = 7)
+
+
+```
+
+```{r}
+
+min_chembl = 5
+
+tract <- read_tsv("~/work/ageing-target-pipeline/databases/tractability_buckets-2020-05-14.tsv") %>% rename(target.id = ensembl_gene_id)
+
+list_tract <- tract %>% filter(target.id %in% a_wide$target.id) %>%
+  mutate(High_Quality_ChEMBL_compounds = ifelse(is.na(High_Quality_ChEMBL_compounds), 0, High_Quality_ChEMBL_compounds)) %>%
+  mutate(no_compounds = ifelse(High_Quality_ChEMBL_compounds == 0, TRUE, FALSE))
+
+list_tract  %>% group_by(Category_sm, no_compounds) %>% count() %>% ggplot(., aes(y=Category_sm, x = n, fill = no_compounds, label = n))  + geom_bar(stat = "identity") + theme_minimal() + geom_text() 
+
+a_wider <- list_tract %>% inner_join(a_wide, by = "target.id") %>% left_join(genes2 %>% select(age_of_onset.cluster, symbol) %>% unique(), by = "symbol")
+a_wider %>% filter(!is.na(age_of_onset.cluster)) %>% group_by(age_of_onset.cluster) %>% filter(!str_detect(age_of_onset.cluster, "3")) %>% nrow()
+
+p <- a_wider %>% plot_multimorbidity() + facet_wrap(~no_compounds)
+
+
+## clusters
+
+
+dc = read_diseases(morbidity_file = paste0(dir, "disease_list_clusters.csv"), colnames = c("disease.id", "morbidity","neuropsychiatric", "musculoskeletal", "cardiometabolic"))
+dc %>% select(-disease.id) %>% summarise_if(is.numeric, list(sum), na.rm = TRUE)
+
+cp <- dc %>% select(-disease.id) %>% pivot_longer(-morbidity) %>% filter(! morbidity %in% measures) %>% ggplot(., aes(x=name, y=morbidity, fill=as.character(value))) + geom_tile(colour="white") + theme_bw() + coord_equal() + scale_fill_manual(values = c("#999999", "#E69F00", "#56B4E9")) + guides(fill = FALSE) + theme(axis.text.x = element_text(angle = 90), axis.title = element_blank())
+ggsave(cp, file = "clusters_heatmap.png", width = 6, height = 6, dpi = 300)
+
+```
+
+Melike's work
+
+```{r}
+clusters <- read_tsv("~/work/melike/2020.06.16.20132621-2.tsv")
+genes <- read_tsv("~/work/melike/2020.06.16.20132621-5.tsv")
+genes2 <- genes %>% separate_rows(Genes, sep = ", ") 
+names(genes2) <- c("age_of_onset.cluster", "age_of_onset.type", "age_of_onset.n_genes", "symbol")
+
+
+```
+
+
+API to get colocalisation information:
+
+```{r}
+library(ghql)
+library(jsonlite)
+
+
+initialise_api <- function(){
+  cli <- GraphqlClient$new(
+  url = "https://genetics-api.opentargets.io/graphql"
+)
+  return(cli)
+}
+
+initialise_queries <- function(){
+    qry <- Query$new()
+  qry$query('coloc_query', 'query gwasVariantColocalisationQuery($studyId: String!, $variantId: String!){
+  studyInfo(studyId: $studyId) {
+    studyId
+    traitReported
+  }
+  gwasColocalisation(studyId: $studyId, variantId: $variantId){
+    study {
+      studyId
+      traitReported
+      traitCategory
+      numAssocLoci
+    }
+    indexVariant {
+      id
+    }
+    beta
+    h3
+    h4
+    log2h4h3
+  }
+}')
+  return(qry)
+}
+
+fetch_coloc <- function(df, variables){
+  result <- fromJSON(cli$exec(qry$queries$coloc_query, variables, flatten = TRUE))$data$gwasColocalisation %>% bind_cols(df)
+  return(result)
+}
+
+morbidity_coloc <- function(a_gen, morb){
+  gen_var <- a_gen %>% 
+    filter(morbidity == morb, sourceID == "ot_genetics_portal") %>% 
+    select(target.id, target.gene_info.symbol, gwas_study_id, variant.id)  %>% 
+    rename(studyId = gwas_study_id, variantId = variant.id) %>% 
+    group_by(target.id, studyId, variantId) %>% 
+    unique() %>%
+    group_split() %>% 
+    purrr::map(~fetch_coloc(df = ., variables = list(studyId = .$studyId, variantId = .$variantId))) %>% bind_rows() %>%
+    mutate(morbidity = morb) 
+  return(gen_var)
+}
+
+cli <- initialise_api()
+qry <- initialise_queries()
+
+#coloc_all <- a_gen_split[1] %>% select(morbidity, target.id, target.gene_info.symbol, gwas_study_id, variant.id, sourceID) %>% split(.$morbidity) %>% purrr::map2(., names(.), function(x,y) {morbidity_coloc(a_gen = x, morb = y) })
+
+## split the data frame into smaller chunks
+a_gen_otg <- a_gen %>% filter(sourceID == "ot_genetics_portal")
+n <- 1000
+nr <- nrow(a_gen_otg)
+a_gen_split <- a_gen_otg %>% filter(sourceID == "ot_genetics_portal") %>% select(morbidity, target.id, target.gene_info.symbol, gwas_study_id, variant.id, sourceID) %>% split(., rep(1:ceiling(nr/n), each=n, length.out=nr))
+coloc_all <- vector(mode = "list", length = length(a_gen_split))
+
+#coloc_all[1] <- 
+coloc_all[[1]] <-  a_gen_split[[1]]  %>% split(.$morbidity) %>% purrr::map2(., names(.), function(x,y) {morbidity_coloc(a_gen = x, morb = y) }) %>% bind_rows()
+
+for (i in seq(2, length(coloc_all))){
+  print(i)
+  coloc_all[[i]] <- a_gen_split[[i]]  %>% split(.$morbidity) %>% purrr::map2(., names(.), function(x,y) {morbidity_coloc(a_gen = x, morb = y) }) %>% bind_rows()
+  Sys.sleep(30)
+}
+
+a_gen_seq(1, length(unique(a_gen$morbidity)), 5)
+
+for (morb in unique(a_gen$morbidity)){
+  print(morb)
+  tmp <- morbidity_coloc(a_gen, morb)
+}
+
+coloc_all_joined <- coloc_all %>% bind_rows() %>% jsonlite::flatten()
+#save(coloc_all_joined, file="colocalisation_otg.Rda")
+```
+
+Or load pre-calculated:
+
+```{r}
+
+######### LOAD SAVED COLOC DATA  ######
+load("colocalisation_otg.Rda")
+
+coloc <- coloc_all_joined %>% 
+  mutate(left_gwas = paste(morbidity, studyId, variantId, sep="."), right_gwas = paste(morbidity, study.studyId, indexVariant.id, sep="."))  %>% 
+  select(study.traitReported, left_gwas, right_gwas) %>% 
+  mutate(right_gwas = ifelse(right_gwas == "NA.NA", NA, right_gwas), coloc = as.integer(1)) %>%  
+  unique() %>% 
+  pivot_wider(names_from = left_gwas, values_from = coloc, values_fill = 0) 
+
+
+## morbidities with coloc signals 
+m_coloc <- coloc_all_joined %>% filter(!is.na(beta)) %>%  pull(morbidity) %>% unique()
+
+
+coloc_subset_pre <-
+  coloc_all_joined %>% 
+  filter(study.studyId %in% a_gen$gwas_study_id) %>% ## only take coloc hits in GWAS's contributing evidence to target list
+  mutate(
+    left_gwas = paste(morbidity, studyId, variantId, sep = "."),   ## reference GWAS hits
+    right_gwas = paste(morbidity, study.studyId, indexVariant.id, sep = ".") ## coloc GWAS hits
+  )  %>% 
+  select(left_gwas, right_gwas) %>% 
+  mutate(right_gwas = ifelse(right_gwas == "NA.NA", NA, right_gwas), coloc = as.integer(1)) %>%  
+  unique() 
+
+coloc_subset <- coloc_subset_pre %>% 
+  pivot_wider(names_from = left_gwas, values_from = coloc, values_fill = 0) 
+
+coloc_subset_mat <- as.matrix(coloc_subset[,-1])
+rownames(coloc_subset_mat) <- coloc_subset$right_gwas
+
+x_labels <- colnames(coloc_subset_mat) %>% str_split(., "\\.", simplify = TRUE)
+y_labels <- rownames(coloc_subset_mat) %>% str_split(., "\\.", simplify = TRUE)
+
+coloc_to_plot <- coloc_subset
+colnames(coloc_to_plot) <- x_labels[,1]
+coloc_to_plot$right_gwas <- y_labels[,1]
+
+
+############### Colocalisation inspection
+
+## how many have evidence of shared signal overall?
+## assume NA means no colocalisation for that variant
+coloc_all_joined %>% mutate(h = ifelse(h4>h3, "h4", "h3")) %>% count(h) %>% mutate(p = round((n/sum(n)*100),2))
+h_figure <- coloc_all_joined %>% group_by(morbidity) %>% mutate(h = ifelse(h4>h3, "h4", "h3")) %>% count(h) %>% mutate(p = round((n/sum(n)*100),2)) %>% ggplot(., aes(y=morbidity, x = n, fill = h)) + geom_col() + theme_bw()
+
+
+## got to see if rhs GWAS is for one of our morbidities
+## so merge with GWAS study x variant x morbidity 
+
+
+
+## let's just look at grip strength 
+# why !is.na(beta)?
+gs_coloc <- coloc_all_joined %>% filter(morbidity == "grip strength measurement", !is.na(beta))
+gs_coloc_rgwas <- a_gen %>% filter(gwas_study_id %in% gs_coloc$study.studyId) %>% select(morbidity,  target.id, target.gene_info.symbol, study.studyId = gwas_study_id, indexVariant.id = variant.id)
+gs_coloc_joined <- gs_coloc %>% left_join(gs_coloc_rgwas, by = c("study.studyId", "indexVariant.id"))
+
+gs_coloc_joined %>% group_by(target.id.x, target.gene_info.symbol.x, target.id.y, target.gene_info.symbol.y, morbidity.y) %>% count() %>% filter(target.gene_info.symbol.x==target.gene_info.symbol.y) %>% filter(morbidity.y != "grip strength measurement") %>% rename(target = target.gene_info.symbol.x) %>% View()
+
+a %>% filter(target.id == "ENSG00000138821") %>% select(morbidity, evidence_count.datatypes.literature) 
+
+## Now for everything
+
+## take all genetic evidence we have, we only care in ones from studies implicated by colocalisation hits
+coloc_rgwas <- a_gen %>% filter(gwas_study_id %in% coloc_all_joined$study.studyId) %>% select(morbidity,  target.id, target.gene_info.symbol, evidence.gene2variant.consequence_code, study.studyId = gwas_study_id, indexVariant.id = variant.id)
+## 9854 variants in coloc_rgwas, 50583 coloc hits in coloc_all_joined, 34958 with h4 > h3
+## join with coloc hits 
+## do we only care about shared causal i.e. h4?
+## we have to remove is.na(study.studyId) otherwise all evidence without study.studyId (i.e. non-GWAS)
+## is joined with all variants with no colocalisation -> ~22million rows!
+coloc_gwas_joined <- coloc_all_joined %>% 
+#  filter(h4 > h3) %>% 
+  left_join(subset(coloc_rgwas, !is.na(study.studyId)), by = c("study.studyId", "indexVariant.id"))
+## this is including all variants tested for colocalisation - i.e. those with none, and those with h3 > h4 - what total do we use for normalisation?
+## all hits? all shared loci? 
+
+
+## how many associations, and shared coloc hits, per morbidity, and per morbidity pair?
+## problem is NA includes both not an ARM and not a colocalisation?
+## added two ifelse statements to correct
+## morbidity.y == "other" if colocalised with another trait, NA if not colocalised or not shared
+total_coloc_morbidity <- coloc_gwas_joined %>% 
+  mutate(morbidity.y = ifelse(!is.na(morbidity.y), morbidity.y,
+                              ifelse(!is.na(h4), "other", morbidity.y))) %>% 
+  group_by(morbidity.x) %>% mutate(total = length(morbidity.x), shared_coloc = sum(h4>h3, na.rm = TRUE)) %>% group_by(morbidity.x, total, shared_coloc) %>%  count(morbidity.x, morbidity.y) 
+ggplot(total_coloc_morbidity, aes(x=n, y = morbidity.x, fill = morbidity.y)) + geom_col() + theme_bw()
+## clearly the majority of coloc signals are outside these morbidities
+
+
+
+### make a heatmap 
+
+
+textcol <- "grey40"
+
+## total associations in our genetic evidence - but there are more?
+total_assoc <- a_gen %>% group_by(morbidity) %>% count(name = "total") %>% rename(morbidity.x = morbidity)
+
+## total coloc hits per morbidity
+total_coloc_hits <- coloc_all_joined %>% count(morbidity, name = "total") %>% rename(morbidity.x = morbidity)
+
+### making a heatmap
+
+coloc_pre_heatmap <- total_coloc_morbidity %>%
+  filter(!is.na(morbidity.y), morbidity.y != "other") %>%  ### CLARE FIX THIS
+  replace(. == "chronic obstructive pulmonary disease", "COPD") %>%
+ # filter(morbidity.x != morbidity.y) %>%
+  mutate(proportion = n/shared_coloc) %>% 
+  ungroup() %>% 
+  select(-total, -n, -shared_coloc) %>%
+  pivot_wider(names_from = morbidity.x, values_from = proportion) %>%
+  replace(is.na(.), 0)
+
+library("ggdendro")
+
+# Run clustering
+coloc_mat <- as.matrix(coloc_pre_heatmap[,-1])
+rownames(coloc_mat) <- coloc_pre_heatmap$morbidity.y
+coloc.dendro <- as.dendrogram(hclust(d = dist(x = coloc_mat)))
+
+# Create dendro
+dendro.plot <- ggdendrogram(data = coloc.dendro, rotate = TRUE)
+
+# Preview the plot
+print(dendro.plot)
+
+## reorder to the clustered order
+coloc.order <- order.dendrogram(coloc.dendro)
+otter.long$accession <- factor(x = otter.long$accession,
+                               levels = otter.scaled$accession[otter.order], 
+                               ordered = TRUE)
+
+coloc_pre_heatmap_long <- coloc_pre_heatmap %>% 
+  replace(. == 0, NA) %>%
+  pivot_longer(-morbidity.y, names_to = "morbidity.x", values_to = "proportion")
+
+coloc_pre_heatmap_long$morbidity.y <- factor(x = coloc_pre_heatmap_long$morbidity.y,
+                                        levels = coloc_pre_heatmap$morbidity.y[coloc.order],
+                                        ordered = TRUE)
+coloc_pre_heatmap_long$morbidity.x <- factor(x = coloc_pre_heatmap_long$morbidity.x,
+                                        levels = coloc_pre_heatmap$morbidity.y[coloc.order],
+                                        ordered = TRUE)
+
+coloc_heatmap <- coloc_pre_heatmap_long %>%
+  ggplot(., aes(x=morbidity.x, y = morbidity.y, fill = proportion)) +
+  geom_tile(colour = textcol) +
+  labs(title = "Proportion of colocalised hits") +
+  coord_fixed() +
+  # theme(axis.text.x = element_text(angle=90, vjust = 0.5, hjust = 1), axis.title = element_blank()) +
+  theme_bw(base_size = 10) +
+  scale_y_discrete(expand = c(0, 0)) +
+  scale_x_discrete(expand = c(0, 0)) +
+  scale_fill_gradient(
+    "proportion",
+    low = "#CBDEF0",
+    high = "#08306B",
+    na.value = "white",
+    guide = guide_colorbar(frame.colour = "black", frame.linewidth = 0.8)
+  ) +
+  theme(
+    axis.text.x = element_text(
+      colour = textcol,
+      angle = 45,
+      hjust = 1
+    ),
+    axis.text.y = element_text(vjust = 0.2,
+                               colour = textcol),
+    axis.ticks = element_line(size = 0.4),
+    axis.title = element_blank(),
+    plot.background = element_blank(),
+    plot.margin = margin(0.7, 0.4, 0.1, 0.2, "cm"),
+    plot.title = element_text(
+      colour = textcol,
+      hjust = 0,
+      size = 14,
+      face = "bold"
+    ),
+    panel.border = element_rect(colour = "black",
+                                size = 0.8)
+  )
+
+ggsave(coloc_heatmap, file = "~/targetage/coloc_heatmap.png", width = 6, height = 6, dpi = 300)
+
+
+### looking at genes
+
+morbidity_coloc_genes <- coloc_gwas_joined %>% group_by(morbidity.x, target.id.x, target.gene_info.symbol.x, target.id.y, target.gene_info.symbol.y, morbidity.y) %>% count() %>% filter(target.gene_info.symbol.x==target.gene_info.symbol.y) %>% rename(target = target.gene_info.symbol.x) 
+morbidity_coloc_count_genes <- morbidity_coloc_genes %>% ungroup() %>% select(morbidity.x, target, morbidity.y, n) %>% group_by(morbidity.x, morbidity.y) %>% summarise(n = length(morbidity.x))
+
+coloc_genes_comorb <- morbidity_coloc_genes %>%
+  filter(morbidity.x != morbidity.y) %>%
+  ungroup() %>% 
+  select(target, morbidity.x, morbidity.y, target.id = target.id.x, n )
+save(morbidity_coloc_genes_comorb, file = "~/work/shinytargetage/data/coloc_genes_comorb.Rda")
+
+## a bad heatmap 
+morbidity_coloc_genes_comorb %>% ungroup() %>% group_by(target) %>% select(target, morbidity.x, morbidity.y)  %>% pivot_longer(-target) %>% select(-name) %>% unique() %>% ggplot(., aes(y=target, x = value)) + geom_tile() + theme_bw() + theme(axis.text.x = element_text(angle = 60))
+
+
+### make network
+library(visNetwork)
+
+    ## construct edges from colocalisation 
+    nodes <- data.frame(id = d$morbidity, 
+                    shape = "circle",
+                    title = d$morbidity)
+    
+    nodes <- nodes %>% mutate(label = ifelse(str_detect(id, " ") == TRUE, gsub('\\b(\\pL)\\pL{2,}|.','\\U\\1',id,perl = TRUE), id))
+    
+    edges <- data.frame(from = morbidity_coloc_genes$morbidity.x, 
+                        to = morbidity_coloc_genes$morbidity.y,
+                        title = morbidity_coloc_genes$target,
+                        weight = morbidity_coloc_genes$n)
+    
+    edges <- edges %>% 
+      filter(from != to) %>% 
+      mutate(from = factor(from, levels = d$morbidity), 
+             to = factor(to, levels = d$morbidity)) 
+    
+    ## there's a problem here --> < and > should be equal number
+asymmetric_edges <- subset(edges, as.integer(from) > as.integer(to))
+  
+
+#     # use the names as node labels
+# visNetwork(nodes, edges, , main = "Morbidity colocalisation", height = "500px") %>%
+#       visNodes(shapeProperties = list(useBorderWithImage = TRUE),
+#                brokenImage = TRUE) %>%
+#       visInteraction(hover = TRUE) %>%
+#       visEdges(width=2,smooth=TRUE,color='grey') %>%
+#   
+
+#graph <- visNetwork(nodes, asymmetric_edges, height = "1000px", width = 1000) %>% visIgraphLayout(layout = "layout_in_circle")
+graph <- visNetwork(nodes, asymmetric_edges, height = "1000px", width = 1000) %>% visIgraphLayout()
+
+
+## how to look by target?
+asymmetric_edges
+asymmetric_edges %>% group_by(title) %>% count() %>% arrange(-n)
+asymmetric_edges %>% group_by(title) %>% mutate(n = length(title)) %>% arrange(-n) %>% View()
+
+## Add colocalisation count alongside multimorbidity count
+## Interestion: SH2B3, SLC39A8, ABCG8, TWIST1, TOMM40, TCF4, TMEM106B
+## MM score or coloc across different diseases areas? some combinations are more interesting than others
+```
+
+
+Overview
+- 33 morbidities
+- 1699 GWAS studies (some are linked to more than one morbidity, 16 with 2, one with 3 (GCST004045    Age-related diseases, mortality and associated endophenotypes)) 
+- 3597 GWAS studies from colocalisation
+
+
+Potential problems:
+
+- multiple phenotypes in GWAS trait are mapped to multiple EFO - i.e. two pieces of evidence from one GWAS hit (e.g. "Chronic bronchitis and chronic obstructive pulmonary disease", genetics_portal_id = c("54a33722f691a8c8f563e16b08f2bb16", "37237b6913f132102679ef29bc432c38")) 
+- same GWAS study and variant mapped to multiple genes
+- multiple similar GWAS studies e.g. Biobank c("NEALE2_20107_10", "NEALE2_20110_10", "NEALE2_20111_10") i.e. "Alzheimer's disease/dementia | illnesses of father", "Alzheimer's disease/dementia | illnesses of siblings", A"lzheimer's disease/dementia | illnesses of mother"
+
+These are the gwas annotated with multiple morbidities:
+
+```{r}
+duplicated_gwas <- a_gen %>% group_by(gwas_study_id, morbidity, disease.reported_trait) %>% count() %>% ungroup() %>% group_by(gwas_study_id) %>% mutate(n = length(gwas_study_id)) %>% arrange(-n) %>% filter(n > 1, !is.na(gwas_study_id))
+
+```
+
+Heatmap stuff
+
+```{r}
 
 library(ggdendro)
 library(lsa)
 mat <- as.matrix(pre_mat.multi[,-1])
 mat[is.na(mat)] <- 0
-rownames(mat) <- pre_mat$target.gene_info.symbol
+rownames(mat) <- pre_mat.multi$target.gene_info.symbol
 
 binary_mat <- mat > 0
 h_binary <- heatmap(cosine(binary_mat*1), symm = TRUE)
-h_genassoc <- heatmap(cosine(mat), symm = TRUE)
+cosine_morbs <- heatmap(cosine(mat[,colnames(mat)!="neurodegeneration"]), symm = TRUE)
+cosine_genes <- heatmap(cosine(t(mat)), symm = TRUE)
+
   
 dendro <- as.dendrogram(hclust(d = dist(x = t(mat))))
 d = dist(x = t(mat), upper = TRUE, diag = TRUE)
@@ -89,7 +675,21 @@ heatmap(as.matrix(dist(x = t(mat))), symm = TRUE)
 heatmap(cor(mat, method = "pearson"), symm = TRUE)
 heatmap(cosine(mat), symm = TRUE)
 
+
+## dendrogram of genes coloured by PCA cluster
+dendro <- as.dendrogram(hclust(d = dist(x = mat)))
 dendro.plot <- ggdendrogram(data = dendro, rotate = TRUE) + theme(axis.text.x = element_blank())
+dendro.data <- dendro_data(dendro)
+
+cluster_label_order <- cluster.df %>% arrange(match(target, label(dendro.data)$label)) %>% pull(cluster)
+p2 <- ggplot(segment(dendro.data)) +
+  geom_segment(aes(x=x, y=y, xend=xend, yend=yend)) +
+  theme_minimal() + 
+  geom_text(data=label(dendro.data),
+               aes(label="I", x=x, y=0, colour=as.character(cluster_label_order)),
+            vjust = 1) +
+  guides(colour = FALSE)
+
 ## cosine similarity or not
 gene_order <- order.dendrogram(dendro)
 
@@ -128,132 +728,98 @@ ggplot(, aes(x = morbidity, y = datatype, fill = value)) +
   )
 
 
-dendro_heatmap <- plot_multiheatmap(filter(a_wide, target.id %in% longevity_multimorb$target.id), gene_order = gene_order)
-
-
-library(ggfortify)
-mat[is.na(mat)] <- 0
-mat.pca <- prcomp(mat, center = TRUE)
-summary(mat.pca)
-autoplot(mat.pca, data = mat.pca, loadings = TRUE, loadings.labels = true)
-
-mat2.pca <- prcomp(t(mat), center = TRUE)
-autoplot(mat2.pca, data = mat2.pca)
-
-
-# only look at multimorb targets
-# randomise columns
-
-
-
+dendro_heatmap <- plot_multiheatmap(filter(a_wide), gene_order = gene_order)
 ```
 
+
+Getting target info for targets
+
+
 ```{r}
-## Reading in genetic evidence data from OT
-## NB it's NDJSON (newline-delimited)
-library(jsonlite)
-dir = "~/work/ageing-target-pipeline/"
-gen_json <-
-  stream_in(file(paste0(dir, "disease_genetic_evidence.json")))
-flat_gen <-
-  gen_json %>% select(-validated_against_schema_version,-access_level) %>% flatten() %>% tibble::as_data_frame()
-flat_gen <- flat_gen %>% filter(query_EFO != "<NA>")
-to_merge <-
-  flat_gen %>% select(
-    sourceID,
-    type,
-    genetics_portal_id = id,
-    target.id,
-    query_EFO,
-    target.target_type,
-    target.activity,
-    variant.rs_id,
-    variant.type,
-    variant.id,
-    disease.specific_id = disease.id,
-    disease.id = query_EFO,
-    disease.reported_trait,
-    disease.efo_info.label.genetics_portal = disease.efo_info.label,
-    evidence.variant2disease.gwas_sample_size,
-    evidence.variant2disease.odds_ratio,
-    evidence.variant2disease.confidence_interval,
-    evidence.variant2disease.resource_score.type,
-    evidence.variant2disease.resource_score.value,
-    evidence.variant2disease.resource_score.method.description,
-    evidence.gene2variant.consequence_code,
-    evidence.gene2variant.resource_score.type,
-    evidence.gene2variant.resource_score.value,
-    evidence.gene2variant.resource_score.method.description,
-    scores.association_score
-  )
+library(httr)
+target_list <- a %>% pull(target.id) %>% unique()
+target_details <- list()
 
-to_merge %>% count(evidence.gene2variant.consequence_code) %>% arrange(-n)
-a_gen <- a %>% left_join(to_merge, by = c("disease.id", "target.id"))
+for (target in target_list){
+  request = GET("https://platform-api.opentargets.io/v3/platform/public/search",
+          query = list(q = target,
+                       size = 1,
+                       filter = "target"))
+response <- content(request, as = "text", encoding = "UTF-8")
 
+result <- fromJSON(response, flatten = TRUE) 
+target_details[[target]]  <- flatten(result$data)  %>% select(contains("data"), -contains("ortholog"))
 
-missense <-
-  flat_gen %>% filter(evidence.gene2variant.consequence_code == "missense_variant")
-a_missense <-
-  a_gen %>% filter(evidence.gene2variant.consequence_code == "missense_variant") %>% group_by(disease.id, target.id) %>% top_n(1, scores.association_score) %>% ungroup()
-
-a_wide
-
-library(ggrepel)
-
-plot_multimorbidity <- function(associations_wide, min_label = 6){
-  p <- associations_wide %>% 
-    multimorbidity_count(multimorbidityscore = TRUE, multimorbiditymean = TRUE) %>% 
-    mutate(label = ifelse(multimorbidity.count >= min_label, target.gene_info.symbol, NA)) %>% 
-    ggplot(., aes(x=multimorbidity.count, y=multimorbidity.score, label = label, colour = multimorbidity.mean)) + 
-    geom_point() + 
-    theme_bw() + 
-    geom_text_repel() + 
-    scale_x_continuous(breaks = seq(0, 15, 1), limits = c(0, 13), expand = c(0,0)) + 
-    scale_y_continuous(expand = c(0,0), limits = c(0, 8))
-  return(p)
 }
 
-p <- a %>% filter(! morbidity %in% measures) %>% widen_associations() %>% plot_multimorbidity(min_label = 4)
+save("target_details", file="~/work/shinytargetage/data/target_details.Rda")
 
+## getting pdb info
+target_pdbs <- list()
+for (target in target_list){
+request = GET(paste0("https://platform-api.opentargets.io/v3/platform/private/target/", target))
+response <- content(request, as = "text", encoding = "UTF-8")
+result <- fromJSON(response, flatten = TRUE) 
+if (length(result$pdb)){
+  target_pdbs[[target]] <- flatten(result$pdb)
+} else {
+  target_pdbs[[target]] <- data.frame(id = NA, 
+                                      value.resolution = NA,
+                                      value.chains = NA,
+                                      value.method = NA)
+}
+}
+
+all_target_pdbs <- bind_rows(target_pdbs, .id = "target.id") 
+save(all_target_pdbs, file = "~/work/shinytargetage/data/all_target_pdbs.Rda")
 
 ```
 
 ```{r}
 
-min_chembl = 5
+gaf_headers = c("DB", 
+                "DB_object_id",
+                "symbol",
+                "Qualifier",
+                "GO.ID",
+                "DB:Reference",
+                "Evidence_code",
+                "With_from",
+                "Aspect",
+                "DB_object_name",
+                "DB_object_synonym",
+                "DB_object_type",
+                "Taxon",
+                "Date",
+                "Assigned_by",
+                "Annotation_extension",
+                "Gene_product_form_id")
 
-tract <- read_tsv("~/work/ageing-target-pipeline/databases/tractability_buckets-2020-05-14.tsv") %>% rename(target.id = ensembl_gene_id)
-
-list_tract <- tract %>% filter(target.id %in% a_wide$target.id) %>%
-  mutate(High_Quality_ChEMBL_compounds = ifelse(is.na(High_Quality_ChEMBL_compounds), 0, High_Quality_ChEMBL_compounds)) %>%
-  mutate(no_compounds = ifelse(High_Quality_ChEMBL_compounds == 0, TRUE, FALSE))
-
-list_tract  %>% group_by(Category_sm, no_compounds) %>% count() %>% ggplot(., aes(y=Category_sm, x = n, fill = no_compounds, label = n))  + geom_bar(stat = "identity") + theme_minimal() + geom_text() 
-
-a_wider <- list_tract %>% inner_join(a_wide, by = "target.id") %>% left_join(genes2 %>% select(age_of_onset.cluster, symbol) %>% unique(), by = "symbol")
-a_wider %>% filter(!is.na(age_of_onset.cluster)) %>% group_by(age_of_onset.cluster) %>% filter(!str_detect(age_of_onset.cluster, "3")) %>% nrow()
-
-p <- a_wider %>% plot_multimorbidity() + facet_wrap(~no_compounds)
-
-
-## clusters
-
-
-dc = read_diseases(morbidity_file = paste0(dir, "disease_list_clusters.csv"), colnames = c("disease.id", "morbidity","neuropsychiatric", "musculoskeletal", "cardiometabolic"))
-dc %>% select(-disease.id) %>% summarise_if(is.numeric, list(sum), na.rm = TRUE)
-
-dc %>% select(-disease.id) %>% pivot_longer(-morbidity) %>% filter(! morbidity %in% measures) %>% ggplot(., aes(x=name, y=morbidity, fill=as.character(value))) + geom_tile(colour="white") + theme_bw() + coord_equal()
+go_terms <- read.csv("~/work/ageing-target-pipeline/GO/go_terms", col.names = c("GO.ID", "GO.term","GO.icon"), header = FALSE)
+go <- read.delim("~/work/ageing-target-pipeline/GO/annotations.mapped.hallmarks.gaf", comment.char = "!", sep = "\t", col.names = gaf_headers) %>%
+  left_join(go_terms, by = "GO.ID")
+go$GO.term.icon <- sapply(go$GO.icon, function(x) as.character(shiny::icon(x, lib = "font-awesome")))
+save(go, file = "~/work/shinytargetage/data/annotations.mapped.hallmarks.Rda")
 
 
 ```
 
-Melike's work
+```{r}
+library(readxl)
+lof <- read_excel("~/work/ageing-target-pipeline/databases/effects_vars_highvep_binary_outcomes3.xlsx")
+save(lof, file = "~/work/shinytargetage/data/lof_protective_variants.Rda")
+
+# PCSK9, ANGPTL4, SOS2, TNS1, RREB1, ZC3HC1
+```
+
+Looking at targets:
 
 ```{r}
-clusters <- read_tsv("~/work/melike/2020.06.16.20132621-2.tsv")
-genes <- read_tsv("~/work/melike/2020.06.16.20132621-5.tsv")
-genes2 <- genes %>% separate_rows(Genes, sep = ", ") 
-names(genes2) <- c("age_of_onset.cluster", "age_of_onset.type", "age_of_onset.n_genes", "symbol")
+target <- "TCF4"
+coloc_gwas_joined %>% filter(target.gene_info.symbol.y == target) %>% select(target.gene_info.symbol.y, morbidity.x, morbidity.y, study.traitReported, evidence.gene2variant.consequence_code, everything()) %>% View()
 
+lof %>% filter(gene_name %in% c("PCSK9", "ANGPTL4", "SOS2", "TNS1", "RREB1", "ZC3HC1")) %>% group_by(gene_name) %>% select(gene_name, trait_reported, everything()) %>%  View()
+
+a_gen %>% filter(target.gene_info.symbol == target) %>% select(evidence.gene2variant.consequence_code, everything()) %>% View()
 
 ```
